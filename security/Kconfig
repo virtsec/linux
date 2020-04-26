@@ -65,6 +65,20 @@ config PAGE_TABLE_ISOLATION
 
 	  See Documentation/x86/pti.txt for more details.
 
+config XMP
+	bool "Protect arbitrary data structures through virtualization"
+	depends on X86_64 && XEN
+	help
+	  Enables protection of arbitrary data structures through virtualization.
+	  This configuration only sets up the different altp2m views in which the
+	  structures are isolated.
+
+config XMP_DEBUG
+	bool "Enable xMP-related output"
+	depends on XMP
+	help
+	  Enable xMP-related output in the kernel.
+
 config SECURITY_INFINIBAND
 	bool "Infiniband Security Hooks"
 	depends on SECURITY && INFINIBAND
