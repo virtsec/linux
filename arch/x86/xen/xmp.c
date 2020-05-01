@@ -351,6 +351,17 @@ static int __init xmp_init_pdomains(void)
         return 0;
 }
 
+int __init xmp_init_late(void)
+{
+	/*
+	 * Initialize all other vCPUs. The first vCPU has already been set up
+	 * in the xmp_init function.
+	 */
+	xmp_init_vcpus();
+
+	return 0;
+}
+
 int __init xmp_init(void)
 {
 	if (xmp_init_pdomains())

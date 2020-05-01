@@ -99,6 +99,8 @@ uint8_t xmp_vmfunc(uint16_t pdomain);
 
 uint16_t xmp_alloc_pdomain(void);
 
+int __init xmp_init_late(void);
+
 int __init xmp_init(void);
 
 #endif /* CONFIG_XMP */

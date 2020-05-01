@@ -1139,6 +1139,10 @@ static noinline void __init kernel_init_freeable(void)
 	smp_init();
 	sched_init_smp();
 
+#ifdef CONFIG_XMP
+	xmp_init_late();
+#endif
+
 	page_alloc_init_late();
 
 	do_basic_setup();
