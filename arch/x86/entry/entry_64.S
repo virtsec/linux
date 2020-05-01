@@ -1167,6 +1167,10 @@ idtentry async_page_fault	do_async_page_fault	has_error_code=1
 idtentry machine_check		do_mce			has_error_code=0	paranoid=1
 #endif
 
+#ifdef CONFIG_XMP
+idtentry virtualization_exception	do_virtualization_exception	has_error_code=0
+#endif
+
 /*
  * Save all registers in pt_regs, and switch gs if needed.
  * Use slow, but surefire "are we in kernel?" check.
