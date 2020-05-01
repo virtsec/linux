@@ -36,15 +36,28 @@
  * they might not be on other architectures.
  */
 #ifdef __XEN__
-#define __DEFINE_GUEST_HANDLE(name, type) \
+#define ___DEFINE_GUEST_HANDLE(name, type) \
     typedef struct { type *p; } __guest_handle_ ## name
 #else
-#define __DEFINE_GUEST_HANDLE(name, type) \
+#define ___DEFINE_GUEST_HANDLE(name, type) \
     typedef type * __guest_handle_ ## name
 #endif
 
+/* MM */
+#define __XEN_INTERFACE_VERSION__ 0x00040d00
+#define TRACE_EXTRA_MAX 7
+/* MM */
+
+#define __DEFINE_GUEST_HANDLE_STRUCT(name, type) \
+        ___DEFINE_GUEST_HANDLE(name, type)
+
+#define __DEFINE_GUEST_HANDLE(name, type) \
+        ___DEFINE_GUEST_HANDLE(name, type);   \
+        ___DEFINE_GUEST_HANDLE(const_##name, const type)
+
 #define DEFINE_GUEST_HANDLE_STRUCT(name) \
 	__DEFINE_GUEST_HANDLE(name, struct name)
+
 #define DEFINE_GUEST_HANDLE(name) __DEFINE_GUEST_HANDLE(name, name)
 #define GUEST_HANDLE(name)        __guest_handle_ ## name
 
@@ -91,6 +104,7 @@ DEFINE_GUEST_HANDLE(int);
 DEFINE_GUEST_HANDLE(void);
 DEFINE_GUEST_HANDLE(uint64_t);
 DEFINE_GUEST_HANDLE(uint32_t);
+DEFINE_GUEST_HANDLE(uint8_t);
 DEFINE_GUEST_HANDLE(xen_pfn_t);
 DEFINE_GUEST_HANDLE(xen_ulong_t);
 #endif
