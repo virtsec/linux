@@ -28,6 +28,10 @@
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 /*
  * Returns 0 if mmiotrace is disabled, or if the fault is not
  * handled by mmiotrace:
@@ -215,7 +219,7 @@ force_sig_info_fault(int si_signo, int si_code, unsigned long address,
 	info.si_code	= si_code;
 	info.si_addr	= (void __user *)address;
 	if (fault & VM_FAULT_HWPOISON_LARGE)
-		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault)); 
+		lsb = hstate_index_to_shift(VM_FAULT_GET_HINDEX(fault));
 	if (fault & VM_FAULT_HWPOISON)
 		lsb = PAGE_SHIFT;
 	info.si_addr_lsb = lsb;
@@ -488,7 +492,7 @@ NOKPROBE_SYMBOL(vmalloc_fault);
 
 #ifdef CONFIG_CPU_SUP_AMD
 static const char errata93_warning[] =
-KERN_ERR 
+KERN_ERR
 "******* Your BIOS seems to not contain a fix for K8 errata #93\n"
 "******* Working around it, but it may cause SEGVs or burn power.\n"
 "******* Please consider a BIOS update.\n"
@@ -1479,3 +1483,21 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	exception_exit(prev_state);
 }
 NOKPROBE_SYMBOL(do_page_fault);
+
+#ifdef CONFIG_XMP
+
+dotraplinkage void
+do_virtualization_exception(struct pt_regs *regs, long error_code)
+{
+	struct vea_struct *vea = xmp_current_vea();
+
+	if (!vea)
+		return;
+
+	/* Prevent VE trapping in VMM */
+	vea->lock = 0;
+
+	xmp_pr_info("VE: GVA = %llx, VIEW = %u", vea->gva, vea->altp2m_id);
+}
+
+#endif /* CONFIG_XMP */
