@@ -113,7 +113,7 @@ static uint16_t xmp_create_pdomain(void)
 	altp2m_id = find_first_zero_bit(xmp_pdomain_bitmap, XMP_MAX_PDOMAINS);
 	if (altp2m_id == XMP_MAX_PDOMAINS) {
 		spin_unlock(&xmp_pdomain_bitmap_lock);
-		return XMP_INVALID_PDOMAIN;
+		return altp2m_id;
 	}
 
 	bitmap_set(xmp_pdomain_bitmap, altp2m_id, 1);
@@ -169,36 +169,44 @@ int xmp_isolate_page(uint16_t altp2m_id, void *addr, xenmem_access_t priv_access
 }
 EXPORT_SYMBOL(xmp_isolate_page);
 
+static int xmp_initialize_pdomain(uint16_t altp2m_id)
+{
+	get_random_bytes(xmp_keys[altp2m_id], sizeof(siphash_key_t));
+
+	/*
+	 * Isolate the page containing the domain-specific key in the given
+	 * pdomain. If this is successful, the key can only be read from in
+	 * the view the key was generated for.
+	 */
+	return xmp_isolate_page(altp2m_id, xmp_keys[altp2m_id], XENMEM_access_r);
+}
+
 uint16_t xmp_alloc_pdomain(void)
 {
 	uint16_t altp2m_id;
 
 	altp2m_id = xmp_create_pdomain();
-	if (altp2m_id == XMP_INVALID_PDOMAIN)
-		return XMP_INVALID_PDOMAIN;
+	if (altp2m_id == XMP_MAX_PDOMAINS)
+		return altp2m_id;
 
 	xmp_keys[altp2m_id] = (void *)get_zeroed_page(GFP_KERNEL);
 	if (!xmp_keys[altp2m_id])
-		goto xmp_early_alloc_destroy_pdomain;
+		goto xmp_alloc_destroy_pdomain;
 
-	/* Generate xMP siphash key for this view */
-	get_random_bytes(xmp_keys[altp2m_id], sizeof(siphash_key_t));
+	if (xmp_initialize_pdomain(altp2m_id))
+		goto xmp_alloc_free_key;
 
-	/* Isolate xMP key for this view */
-	if (xmp_isolate_page(altp2m_id, xmp_keys[altp2m_id], XENMEM_access_r))
-		goto xmp_early_alloc_free_key;
-
-	xmp_pr_info("Created early pdomain %u", altp2m_id);
+	xmp_pr_info("Created pdomain %u", altp2m_id);
 
 	return altp2m_id;
 
-xmp_early_alloc_free_key:
+xmp_alloc_free_key:
 	free_page((unsigned long)xmp_keys[altp2m_id]);
 
-xmp_early_alloc_destroy_pdomain:
+xmp_alloc_destroy_pdomain:
 	xmp_destroy_pdomain(altp2m_id);
 
-	return XMP_INVALID_PDOMAIN;
+	return XMP_MAX_PDOMAINS;
 }
 EXPORT_SYMBOL(xmp_alloc_pdomain);
 
@@ -211,18 +219,14 @@ static uint16_t __init xmp_early_alloc_pdomain(void)
 	uint16_t altp2m_id;
 
 	altp2m_id = xmp_create_pdomain();
-	if (altp2m_id == XMP_INVALID_PDOMAIN)
-		return XMP_INVALID_PDOMAIN;
+	if (altp2m_id == XMP_MAX_PDOMAINS)
+		return altp2m_id;
 
 	xmp_keys[altp2m_id] = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
 	if (!xmp_keys[altp2m_id])
 		goto xmp_early_alloc_destroy_pdomain;
 
-	/* Generate xMP siphash key for this view */
-	get_random_bytes(xmp_keys[altp2m_id], sizeof(siphash_key_t));
-
-	/* Isolate xMP key for this view */
-	if (xmp_isolate_page(altp2m_id, xmp_keys[altp2m_id], XENMEM_access_r))
+	if (xmp_initialize_pdomain(altp2m_id))
 		goto xmp_early_alloc_free_key;
 
 	xmp_pr_info("Created early pdomain %u", altp2m_id);
@@ -327,7 +331,7 @@ static int __init xmp_init_pdomains(void)
 		if (altp2m_create_view(XENMEM_access_default, &altp2m_id))
 			return -EFAULT;
 
-		xmp_pr_info("Created Xen domain %u", altp2m_id);
+		xmp_pr_info("Created view %u", altp2m_id);
 	}
 
 
