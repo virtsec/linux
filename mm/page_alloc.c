@@ -68,6 +68,10 @@
 #include <linux/lockdep.h>
 #include <linux/nmi.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -4357,6 +4361,16 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
+#ifdef CONFIG_XMP
+	uint16_t altp2m_id;
+
+	/*
+	 * Fetch the altp2m_id from the GFP flags. This has to be done before
+	 * the mask is sanity-checked, otherwise the encoded altp2m view will
+	 * be cleared.
+	 */
+	altp2m_id = XMP_GFP_FVIEW(gfp_mask);
+#endif
 
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
@@ -4397,6 +4411,24 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
+#ifdef CONFIG_XMP
+	if (page && altp2m_id > XMP_RESTRICTED_PDOMAIN) {
+		int ret;
+
+		ret = xmp_isolate_pages(altp2m_id, page, (1U << order),
+			XENMEM_access_r, XENMEM_access_rwx);
+		if (!ret)
+			goto alloc_page_return;
+
+		/*
+		 * For now, show a warning when isolating the set of pages fails.
+		 */
+		xmp_pr_info("Could not isolate page(s) in pdomain %u", altp2m_id);
+	}
+
+alloc_page_return:
+#endif
+
 	return page;
 }
 EXPORT_SYMBOL(__alloc_pages_nodemask);
@@ -4430,6 +4462,23 @@ EXPORT_SYMBOL(get_zeroed_page);
 void __free_pages(struct page *page, unsigned int order)
 {
 	if (put_page_testzero(page)) {
+#ifdef CONFIG_XMP
+		int ret;
+		if (page->flags & (1UL << PG_xmp)) {
+			ret = xmp_release_pages(page, (1U << order));
+			if (!ret)
+				goto free_unref_page;
+
+			/*
+			 * For now, show a warning message when releasing
+			 * the isolated pages fails.
+			 */
+			xmp_pr_info("Could not release page(s)");
+		}
+
+free_unref_page:
+#endif
+
 		if (order == 0)
 			free_unref_page(page);
 		else
