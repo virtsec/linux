@@ -24,6 +24,7 @@
 #include <asm/vsyscall.h>		/* emulate_vsyscall		*/
 #include <asm/vm86.h>			/* struct vm86			*/
 #include <asm/mmu_context.h>		/* vma_pkey()			*/
+#include <asm/vmx.h>			/* EPT_VIOLATION_*, ...		*/
 
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
@@ -1486,18 +1487,43 @@ NOKPROBE_SYMBOL(do_page_fault);
 
 #ifdef CONFIG_XMP
 
+static inline long error_code_ve(long exit_qualification)
+{
+	long error_code = X86_PF_PROT | X86_PF_PK;
+
+	error_code |= (exit_qualification & EPT_VIOLATION_ACC_WRITE) ? X86_PF_WRITE : 0;
+	error_code |= (exit_qualification & EPT_VIOLATION_ACC_INSTR) ? X86_PF_INSTR : 0;
+	error_code |= (exit_qualification & EPT_VIOLATION_GVA_USER)  ? X86_PF_USER  : 0;
+
+	return error_code;
+}
+
 dotraplinkage void
 do_virtualization_exception(struct pt_regs *regs, long error_code)
 {
-	struct vea_struct *vea = xmp_current_vea();
+	struct vea_struct *vea;
+	struct vm_area_struct *vma;
 
+	vea = xmp_current_vea();
 	if (!vea)
 		return;
 
-	/* Prevent VE trapping in VMM */
 	vea->lock = 0;
 
+	/*
+	 * The actual error code needs to be derived from the exit_qualification
+	 * field in the virtualization exception area structure.
+	 */
+	error_code = error_code_ve(vea->exit_qualification);
+
 	xmp_pr_info("VE: GVA = %llx, VIEW = %u", vea->gva, vea->altp2m_id);
+
+	if (fault_in_kernel_space(vea->gva))
+		bad_area_nosemaphore(regs, error_code, vea->gva, NULL);
+
+	vma = find_vma(current->mm, vea->gva);
+
+	__bad_area(regs, error_code, vea->gva, vma, SEGV_PKUERR);
 }
 
 #endif /* CONFIG_XMP */
