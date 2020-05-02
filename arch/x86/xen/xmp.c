@@ -171,6 +171,7 @@ int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pa
 
 	return 0;
 }
+EXPORT_SYMBOL(xmp_isolate_pages);
 
 /*
  * xmp_isolate_page: Isolate a given page in the given pdomain.
