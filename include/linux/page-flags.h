@@ -101,6 +101,9 @@ enum pageflags {
 	PG_young,
 	PG_idle,
 #endif
+#ifdef CONFIG_XMP_PT
+	PG_pt,
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
