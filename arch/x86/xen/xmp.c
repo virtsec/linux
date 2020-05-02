@@ -137,35 +137,53 @@ static void xmp_destroy_pdomain(uint16_t altp2m_id)
 	altp2m_destroy_view(altp2m_id);
 }
 
-int xmp_isolate_pages(uint16_t altp2m_id, void *addr, unsigned long num_pages,
-	xenmem_access_t access)
+/*
+ * xmp_isolate_pages: Isolate <num_pages> continuous pages in the given pdomain.
+ *
+ * @altp2m_id: The pdomain in which to isolate the given page
+ * @page: The page to isolate
+ * @num_pages: The number of pages to isolate
+ * @r_access: The permissions in the restricted views
+ * @p_access: The permissions in the "private" (relaxed) view
+ */
+int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pages,
+	xenmem_access_t r_access, xenmem_access_t p_access)
 {
 	int ret;
-	unsigned long i, j;
+	unsigned int i, j;
 	xen_pfn_t gfn;
 
 	for (i = 0; i < num_pages; i++) {
-		gfn = virt_to_pfn(addr) + i;
-
-		ret = altp2m_isolate_pdomain(altp2m_id, gfn, XENMEM_access_n, access);
+		gfn = page_to_pfn(page) + i;
+		ret = altp2m_isolate_pdomain(altp2m_id, gfn, r_access, p_access);
 		if (ret)
 			return -EFAULT;
 
+		/*
+		 * TODO CRO: Incorporate this in the actual Xen hypercall
+		 */
 		for (j = 1; j < (XMP_MAX_PDOMAINS - 1); j++) {
-			ret = altp2m_set_suppress_ve(j, gfn, false);
-			if (ret) {
-				xmp_pr_info("Could not clear suppress_be bit for GFN = %lu", gfn);
+			ret = altp2m_set_suppress_ve(altp2m_id, gfn, false);
+			if (ret)
 				return -EFAULT;
-			}
 		}
 	}
 
 	return 0;
 }
 
-int xmp_isolate_page(uint16_t altp2m_id, void *addr, xenmem_access_t priv_access)
+/*
+ * xmp_isolate_page: Isolate a given page in the given pdomain.
+ *
+ * @altp2m_id: The pdomain in which to isolate the given page
+ * @page: The page to isolate
+ * @r_access: The permissions in the restricted views
+ * @p_access: The permissions in the "private" (relaxed) view
+ */
+int xmp_isolate_page(uint16_t altp2m_id, struct page *page, xenmem_access_t r_access,
+	xenmem_access_t p_access)
 {
-	return xmp_isolate_pages(altp2m_id, addr, 1, priv_access);
+	return xmp_isolate_pages(altp2m_id, page, 1, p_access, r_access);
 }
 EXPORT_SYMBOL(xmp_isolate_page);
 
@@ -178,7 +196,8 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id)
 	 * pdomain. If this is successful, the key can only be read from in
 	 * the view the key was generated for.
 	 */
-	return xmp_isolate_page(altp2m_id, xmp_keys[altp2m_id], XENMEM_access_r);
+	return xmp_isolate_addr(altp2m_id, xmp_keys[altp2m_id], 1,
+		XENMEM_access_n, XENMEM_access_r);
 }
 
 uint16_t xmp_alloc_pdomain(void)
@@ -358,6 +377,8 @@ int __init xmp_init_late(void)
 	 * in the xmp_init function.
 	 */
 	xmp_init_vcpus();
+
+	alloc_pages(XMP_GFP_FLAGS(XMP_RESTRICTED_PDOMAIN_PT, GFP_KERNEL), 2);
 
 	return 0;
 }

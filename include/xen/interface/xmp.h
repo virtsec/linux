@@ -97,6 +97,15 @@ struct vea_struct *xmp_current_vea(void);
 
 uint8_t xmp_vmfunc(uint16_t pdomain);
 
+int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pages,
+	xenmem_access_t r_access, xenmem_access_t p_access);
+
+int xmp_isolate_page(uint16_t altp2m_id, struct page *page,
+	xenmem_access_t r_access, xenmem_access_t p_access);
+
+#define xmp_isolate_addr(altp2m_id, addr, num_pages, r_access, p_access)		\
+	xmp_isolate_pages(altp2m_id, virt_to_page(addr), num_pages, r_access, p_access)
+
 uint16_t xmp_alloc_pdomain(void);
 
 int __init xmp_init_late(void);
