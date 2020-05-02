@@ -123,7 +123,7 @@ static uint16_t xmp_create_pdomain(void)
 	return altp2m_id;
 }
 
-static void xmp_destroy_pdomain(uint16_t altp2m_id)
+static int xmp_destroy_pdomain(uint16_t altp2m_id)
 {
 	int set;
 
@@ -131,10 +131,70 @@ static void xmp_destroy_pdomain(uint16_t altp2m_id)
 	set = test_and_clear_bit(altp2m_id, xmp_pdomain_bitmap);
 	spin_unlock(&xmp_pdomain_bitmap_lock);
 
-	if (!set)
-		return;
+	return set;
+}
 
-	altp2m_destroy_view(altp2m_id);
+static int __xmp_isolate_pages(uint16_t altp2m_id, struct page *page,
+	unsigned int num_pages, xenmem_access_t r_access,
+	xenmem_access_t p_access, bool release)
+{
+	int ret;
+	unsigned int i, j;
+	xen_pfn_t gfn;
+	struct page *pgp;
+
+	for (i = 0; i < num_pages; i++) {
+		pgp = page + i;
+		gfn = page_to_pfn(pgp);
+
+		/*
+		 * Sanity check before performing isolation or release of pages
+		 *
+		 * We check whether the pages have already been isolated before
+		 * trying to release them. The same goes for the isolation with
+		 * the PG_xmp bit not being set.
+		 */
+		if (release && pgp->flags & (1UL << PG_xmp))
+			__clear_bit(PG_xmp, &pgp->flags);
+		else {
+			xmp_pr_info("Trying to release a non-isolated page, skip...");
+			continue;
+		}
+
+		/*
+		 * When isolating a page, we only check whether the PG_xmp bit
+		 * is cleared and if it is, we set it.
+		 *
+		 * If it is set, then the page is already isolated and the call
+		 * is simply to alter the permissions for this page.
+		 */
+		if (!release && !(pgp->flags & (1UL << PG_xmp)))
+			__set_bit(PG_xmp, &pgp->flags);
+
+		ret = altp2m_isolate_pdomain(altp2m_id, gfn, r_access, p_access);
+		if (ret)
+			return -EFAULT;
+
+		/*
+		 * TODO CRO: Incorporate this in the actual Xen hypercall
+		 *
+		 * This should happen in Xen. To deal with the suppress_ve bit
+		 * issue, which is set for newer Xen versions, we also have to
+		 * pass an additional parameter  to the altp2m_isolate_pdomain
+		 * function which states whether the suppress_ve bit should be
+		 * set or cleared.
+		 *
+		 * On isolations, the bit should be cleared to trigger the #VE
+		 * for this page. Upon releasing, we set the bit again.
+		 */
+		for (j = 1; j < (XMP_MAX_PDOMAINS - 1); j++) {
+			ret = altp2m_set_suppress_ve(altp2m_id, gfn, false);
+			if (ret)
+				return -EFAULT;
+		}
+	}
+
+	return 0;
 }
 
 /*
@@ -149,27 +209,7 @@ static void xmp_destroy_pdomain(uint16_t altp2m_id)
 int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pages,
 	xenmem_access_t r_access, xenmem_access_t p_access)
 {
-	int ret;
-	unsigned int i, j;
-	xen_pfn_t gfn;
-
-	for (i = 0; i < num_pages; i++) {
-		gfn = page_to_pfn(page) + i;
-		ret = altp2m_isolate_pdomain(altp2m_id, gfn, r_access, p_access);
-		if (ret)
-			return -EFAULT;
-
-		/*
-		 * TODO CRO: Incorporate this in the actual Xen hypercall
-		 */
-		for (j = 1; j < (XMP_MAX_PDOMAINS - 1); j++) {
-			ret = altp2m_set_suppress_ve(altp2m_id, gfn, false);
-			if (ret)
-				return -EFAULT;
-		}
-	}
-
-	return 0;
+	return __xmp_isolate_pages(altp2m_id, page, num_pages, r_access, p_access, false);
 }
 EXPORT_SYMBOL(xmp_isolate_pages);
 
@@ -184,9 +224,22 @@ EXPORT_SYMBOL(xmp_isolate_pages);
 int xmp_isolate_page(uint16_t altp2m_id, struct page *page, xenmem_access_t r_access,
 	xenmem_access_t p_access)
 {
-	return xmp_isolate_pages(altp2m_id, page, 1, r_access, p_access);
+	return __xmp_isolate_pages(altp2m_id, page, 1, r_access, p_access, false);
 }
 EXPORT_SYMBOL(xmp_isolate_page);
+
+/*
+ * xmp_release_pages: Release the given pages from all pdomains.
+ *
+ * @page: The page or compound page head to release.
+ * @num_pages: The number of continuous pages.
+ */
+int xmp_release_pages(struct page *page, unsigned int num_pages)
+{
+	return __xmp_isolate_pages(XMP_RESTRICTED_PDOMAIN, page, num_pages,
+		XENMEM_access_rwx, XENMEM_access_rwx, true);
+}
+EXPORT_SYMBOL(xmp_release_pages);
 
 static int xmp_initialize_pdomain(uint16_t altp2m_id)
 {
@@ -229,6 +282,15 @@ xmp_alloc_destroy_pdomain:
 	return XMP_MAX_PDOMAINS;
 }
 EXPORT_SYMBOL(xmp_alloc_pdomain);
+
+void xmp_free_pdomain(uint16_t altp2m_id)
+{
+	if (!xmp_destroy_pdomain(altp2m_id))
+		return;
+
+	altp2m_destroy_view(altp2m_id);
+}
+EXPORT_SYMBOL(xmp_free_pdomain);
 
 /*
  * Initialization

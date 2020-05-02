@@ -97,21 +97,40 @@ struct vea_struct *xmp_current_vea(void);
 
 uint8_t xmp_vmfunc(uint16_t pdomain);
 
+/*
+ * xMP primitive B - Isolation of xMP domains
+ */
+
 int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pages,
 	xenmem_access_t r_access, xenmem_access_t p_access);
 
 int xmp_isolate_page(uint16_t altp2m_id, struct page *page,
 	xenmem_access_t r_access, xenmem_access_t p_access);
 
+int xmp_release_pages(struct page *page, unsigned int num_pages);
+
 #define xmp_isolate_addr(altp2m_id, addr, num_pages, r_access, p_access)		\
 	xmp_isolate_pages(altp2m_id, virt_to_page(addr), num_pages, r_access, p_access)
 
+/*
+ * xMP primitive A - Memory partitioning through xMP Domains
+ */
+
 uint16_t xmp_alloc_pdomain(void);
+
+void xmp_free_pdomain(uint16_t altp2m_id);
 
 int __init xmp_init_late(void);
 
 int __init xmp_init(void);
 
 #endif /* CONFIG_XMP */
+
+#ifdef CONFIG_XMP_PT
+
+#define xmp_isolate_pt(altp2m_id, page)							\
+	xmp_isolate_page(altp2m_id, page, XENMEM_access_r, XENMEM_access_rwx)
+
+#endif /* CONFIG_XMP_PT */
 
 #endif /* __XEN_PUBLIC_XMP_H__ */
