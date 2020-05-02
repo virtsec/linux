@@ -183,7 +183,7 @@ int xmp_isolate_pages(uint16_t altp2m_id, struct page *page, unsigned int num_pa
 int xmp_isolate_page(uint16_t altp2m_id, struct page *page, xenmem_access_t r_access,
 	xenmem_access_t p_access)
 {
-	return xmp_isolate_pages(altp2m_id, page, 1, p_access, r_access);
+	return xmp_isolate_pages(altp2m_id, page, 1, r_access, p_access);
 }
 EXPORT_SYMBOL(xmp_isolate_page);
 
