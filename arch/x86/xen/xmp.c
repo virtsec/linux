@@ -29,10 +29,12 @@ DEFINE_SPINLOCK(xmp_pdomain_bitmap_lock);
 /*
  * Pointers to xMP siphash key
  *
- * Each view is assigned axMP siphash key which is only visible to the specific
- * view it was allocated for. Thus, we need a page for each key to reside in.
+ * Each view is assigned a xMP siphash key which is only visible to the specific
+ * view it was allocated for. Thus, we need a page for each key to reside in. To
+ * make sure the key appears to be at the same address for each domain, we use
+ * Xens altp2m_change_gfn hypercall to remap the GFN of the secret key page.
  */
-static siphash_key_t *xmp_keys[XMP_MAX_PDOMAINS] = { 0 };
+static siphash_key_t *xmp_key = NULL;
 
 /*
  * xMP vCPU information structure
@@ -154,13 +156,17 @@ static int __xmp_isolate_pages(uint16_t altp2m_id, struct page *page,
 		 * trying to release them. The same goes for the isolation with
 		 * the PG_xmp bit not being set.
 		 */
-		if (release && pgp->flags & (1UL << PG_xmp))
+		if (!release)
+			goto isolate_pages;
+
+		if (pgp->flags & (1UL << PG_xmp))
 			__clear_bit(PG_xmp, &pgp->flags);
 		else {
 			xmp_pr_info("Trying to release a non-isolated page, skip...");
 			continue;
 		}
 
+isolate_pages:
 		/*
 		 * When isolating a page, we only check whether the PG_xmp bit
 		 * is cleared and if it is, we set it.
@@ -241,32 +247,42 @@ int xmp_release_pages(struct page *page, unsigned int num_pages)
 }
 EXPORT_SYMBOL(xmp_release_pages);
 
-static int xmp_initialize_pdomain(uint16_t altp2m_id)
+static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
 {
-	get_random_bytes(xmp_keys[altp2m_id], sizeof(siphash_key_t));
+	int ret;
+
+	get_random_bytes(key, sizeof(*key));
+
+	/*
+	 * Remap the GFN of the new key page to the general GFN in which all
+	 * keys are accessible from their own pdomain.
+	 */
+	ret = altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
+	if (ret)
+		return -EFAULT;
 
 	/*
 	 * Isolate the page containing the domain-specific key in the given
 	 * pdomain. If this is successful, the key can only be read from in
 	 * the view the key was generated for.
 	 */
-	return xmp_isolate_addr(altp2m_id, xmp_keys[altp2m_id], 1,
-		XENMEM_access_n, XENMEM_access_r);
+	return xmp_isolate_addr(altp2m_id, key, 1, XENMEM_access_n, XENMEM_access_r);
 }
 
 uint16_t xmp_alloc_pdomain(void)
 {
 	uint16_t altp2m_id;
+	siphash_key_t *key;
 
 	altp2m_id = xmp_create_pdomain();
 	if (altp2m_id == XMP_MAX_PDOMAINS)
 		return altp2m_id;
 
-	xmp_keys[altp2m_id] = (void *)get_zeroed_page(GFP_KERNEL);
-	if (!xmp_keys[altp2m_id])
+	key = (void *)get_zeroed_page(GFP_KERNEL);
+	if (!key)
 		goto xmp_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id))
+	if (xmp_initialize_pdomain(altp2m_id, key))
 		goto xmp_alloc_free_key;
 
 	xmp_pr_info("Created pdomain %u", altp2m_id);
@@ -274,7 +290,7 @@ uint16_t xmp_alloc_pdomain(void)
 	return altp2m_id;
 
 xmp_alloc_free_key:
-	free_page((unsigned long)xmp_keys[altp2m_id]);
+	free_page((unsigned long)key);
 
 xmp_alloc_destroy_pdomain:
 	xmp_destroy_pdomain(altp2m_id);
@@ -299,16 +315,17 @@ EXPORT_SYMBOL(xmp_free_pdomain);
 static uint16_t __init xmp_early_alloc_pdomain(void)
 {
 	uint16_t altp2m_id;
+	siphash_key_t *key;
 
 	altp2m_id = xmp_create_pdomain();
 	if (altp2m_id == XMP_MAX_PDOMAINS)
 		return altp2m_id;
 
-	xmp_keys[altp2m_id] = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
-	if (!xmp_keys[altp2m_id])
+	key = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
+	if (!key)
 		goto xmp_early_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id))
+	if (xmp_initialize_pdomain(altp2m_id, key))
 		goto xmp_early_alloc_free_key;
 
 	xmp_pr_info("Created early pdomain %u", altp2m_id);
@@ -316,7 +333,7 @@ static uint16_t __init xmp_early_alloc_pdomain(void)
 	return altp2m_id;
 
 xmp_early_alloc_free_key:
-	memblock_free_early(__pa(xmp_keys[altp2m_id]), PAGE_SIZE);
+	memblock_free_early(__pa(key), PAGE_SIZE);
 
 xmp_early_alloc_destroy_pdomain:
 	xmp_destroy_pdomain(altp2m_id);
@@ -416,6 +433,13 @@ static int __init xmp_init_pdomains(void)
 		xmp_pr_info("Created view %u", altp2m_id);
 	}
 
+	/*
+	 * Alocate a random page which is going to be the base page used for
+	 * the GFN remapping mechanism.
+	 */
+	xmp_key = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
+	if (!xmp_key)
+		return -EFAULT;
 
 	/*
 	 * Allocate the first xMP protection domain for the restricted (a.k.a.
@@ -440,8 +464,6 @@ int __init xmp_init_late(void)
 	 * in the xmp_init function.
 	 */
 	xmp_init_vcpus();
-
-	alloc_pages(XMP_GFP_FLAGS(XMP_RESTRICTED_PDOMAIN_PT, GFP_KERNEL), 2);
 
 	return 0;
 }
