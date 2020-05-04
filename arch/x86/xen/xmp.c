@@ -141,7 +141,7 @@ static int __xmp_isolate_pages(uint16_t altp2m_id, struct page *page,
 	xenmem_access_t p_access, bool release)
 {
 	int ret;
-	unsigned int i, j;
+	unsigned int i;
 	xen_pfn_t gfn;
 	struct page *pgp;
 
@@ -229,11 +229,12 @@ int xmp_release_pages(struct page *page, unsigned int num_pages)
 }
 EXPORT_SYMBOL(xmp_release_pages);
 
-static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
+static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key, bool has_key)
 {
 	int ret;
 
-	get_random_bytes(key, sizeof(*key));
+	if (has_key)
+		get_random_bytes(key, sizeof(*key));
 
 	/*
 	 * Isolate the page containing the domain-specific key in the given
@@ -251,7 +252,7 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
 	return altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
 }
 
-uint16_t xmp_alloc_pdomain(void)
+uint16_t xmp_alloc_pdomain(bool has_key)
 {
 	uint16_t altp2m_id;
 	siphash_key_t *key;
@@ -264,7 +265,7 @@ uint16_t xmp_alloc_pdomain(void)
 	if (!key)
 		goto xmp_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id, key))
+	if (xmp_initialize_pdomain(altp2m_id, key, has_key))
 		goto xmp_alloc_free_key;
 
 	xmp_pr_info("Created pdomain %u", altp2m_id);
@@ -294,7 +295,7 @@ EXPORT_SYMBOL(xmp_free_pdomain);
  * Initialization
  */
 
-static uint16_t __init xmp_early_alloc_pdomain(void)
+static uint16_t __init xmp_early_alloc_pdomain(bool has_key)
 {
 	uint16_t altp2m_id;
 	siphash_key_t *key;
@@ -307,7 +308,7 @@ static uint16_t __init xmp_early_alloc_pdomain(void)
 	if (!key)
 		goto xmp_early_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id, key))
+	if (xmp_initialize_pdomain(altp2m_id, key, has_key))
 		goto xmp_early_alloc_free_key;
 
 	xmp_pr_info("Created early pdomain %u", altp2m_id);
@@ -428,13 +429,20 @@ static int __init xmp_init_pdomains(void)
 	 * acummulated restrictions) view. This is the view the kernel usually
 	 * resides in.
 	 */
-	xmp_early_alloc_pdomain();
+	altp2m_id = xmp_early_alloc_pdomain(false);
+	if (altp2m_id != XMP_RESTRICTED_PDOMAIN)
+		return -EFAULT;
+
+#ifdef CONFIG_XMP_PT
 
 	/*
 	 * Allocate restricted view for page tables (XMP_RESTRICTED_PDOMAIN_PT)
 	 * This view is designed for isolating page tables.
 	 */
-	xmp_early_alloc_pdomain();
+	altp2m_id = xmp_early_alloc_pdomain(true);
+	if (altp2m_id != XMP_RESTRICTED_PDOMAIN_PT)
+		return -EFAULT;
+#endif
 
         return 0;
 }

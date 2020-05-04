@@ -49,6 +49,18 @@
 #define XMP_GFP_FVIEW(flags)		(flags) >> __GFP_BITS_SHIFT
 
 /*
+ * xMP kernel index
+ */
+
+#define XMP_HMAC_MASK(index)		(index) >> 48
+#define XMP_VIEW_MASK(index)		(index) & 0xffff
+
+#define XMP_HMAC(hmac)			((uint64_t)(hmac) & 0xffff) << 48
+#define XMP_VIEW(view)			((view) & 0x00ff) <<  0
+
+#define XMP_INDEX(view, hmac)		XMP_HMAC(hmac) | XMP_VIEW(view)
+
+/*
  * xMP structures
  */
 
@@ -116,7 +128,7 @@ int xmp_release_pages(struct page *page, unsigned int num_pages);
  * xMP primitive A - Memory partitioning through xMP Domains
  */
 
-uint16_t xmp_alloc_pdomain(void);
+uint16_t xmp_alloc_pdomain(bool has_key);
 
 void xmp_free_pdomain(uint16_t altp2m_id);
 
