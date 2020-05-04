@@ -201,7 +201,8 @@ int altp2m_get_vcpu_p2m_idx(uint32_t vcpuid, uint16_t *altp2m_idx)
 }
 
 int altp2m_isolate_pdomain(uint16_t altp2m_id, xen_pfn_t gfn,
-        xenmem_access_t restr_access, xenmem_access_t priv_access)
+        xenmem_access_t restr_access, xenmem_access_t priv_access,
+	bool suppress_ve)
 {
         xen_hvm_altp2m_op_t arg = { 0 };
 
@@ -212,6 +213,7 @@ int altp2m_isolate_pdomain(uint16_t altp2m_id, xen_pfn_t gfn,
         arg.u.isolate_pdomain.restr_access = restr_access;
         arg.u.isolate_pdomain.priv_access = priv_access;
         arg.u.isolate_pdomain.gfn = gfn;
+	arg.u.isolate_pdomain.suppress_ve = suppress_ve;
 
         return HYPERVISOR_hvm_op(HVMOP_altp2m, &arg);
 }

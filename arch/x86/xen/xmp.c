@@ -177,27 +177,9 @@ isolate_pages:
 		if (!release && !(pgp->flags & (1UL << PG_xmp)))
 			__set_bit(PG_xmp, &pgp->flags);
 
-		ret = altp2m_isolate_pdomain(altp2m_id, gfn, r_access, p_access);
+		ret = altp2m_isolate_pdomain(altp2m_id, gfn, r_access, p_access, release);
 		if (ret)
 			return -EFAULT;
-
-		/*
-		 * TODO CRO: Incorporate this in the actual Xen hypercall
-		 *
-		 * This should happen in Xen. To deal with the suppress_ve bit
-		 * issue, which is set for newer Xen versions, we also have to
-		 * pass an additional parameter  to the altp2m_isolate_pdomain
-		 * function which states whether the suppress_ve bit should be
-		 * set or cleared.
-		 *
-		 * On isolations, the bit should be cleared to trigger the #VE
-		 * for this page. Upon releasing, we set the bit again.
-		 */
-		for (j = 1; j < (XMP_MAX_PDOMAINS - 1); j++) {
-			ret = altp2m_set_suppress_ve(altp2m_id, gfn, false);
-			if (ret)
-				return -EFAULT;
-		}
 	}
 
 	return 0;
@@ -254,19 +236,19 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
 	get_random_bytes(key, sizeof(*key));
 
 	/*
-	 * Remap the GFN of the new key page to the general GFN in which all
-	 * keys are accessible from their own pdomain.
-	 */
-	ret = altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
-	if (ret)
-		return -EFAULT;
-
-	/*
 	 * Isolate the page containing the domain-specific key in the given
 	 * pdomain. If this is successful, the key can only be read from in
 	 * the view the key was generated for.
 	 */
-	return xmp_isolate_addr(altp2m_id, key, 1, XENMEM_access_n, XENMEM_access_r);
+	ret = xmp_isolate_addr(altp2m_id, key, 1, XENMEM_access_n, XENMEM_access_r);
+	if (ret)
+		return -EFAULT;
+
+	/*
+	 * Remap the GFN of the new key page to the general GFN in which all
+	 * keys are accessible from their own pdomain.
+	 */
+	return altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
 }
 
 uint16_t xmp_alloc_pdomain(void)

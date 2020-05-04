@@ -309,6 +309,8 @@ struct xen_hvm_altp2m_isolate_pdomain {
     uint16_t pad;
     /* gfn */
     uint64_t gfn;
+    /* suppress_ve */
+    uint8_t suppress_ve; /* bool */
 };
 typedef struct xen_hvm_altp2m_isolate_pdomain xen_hvm_altp2m_isolate_pdomain_t;
 DEFINE_GUEST_HANDLE(xen_hvm_altp2m_isolate_pdomain_t);

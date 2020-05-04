@@ -43,6 +43,7 @@ int altp2m_change_gfn(uint16_t view_id, xen_pfn_t old_gfn, xen_pfn_t new_gfn);
 int altp2m_get_mem_access(uint16_t view_id, xen_pfn_t gfn, xenmem_access_t *access);
 int altp2m_get_vcpu_p2m_idx(uint32_t vcpuid, uint16_t *altp2m_idx);
 int altp2m_isolate_pdomain(uint16_t altp2m_id, xen_pfn_t gfn,
-        xenmem_access_t restr_access, xenmem_access_t priv_access);
+        xenmem_access_t restr_access, xenmem_access_t priv_access,
+	bool suppress_ve);
 
 #endif /* __XEN_PUBLIC_ALTP2M_H__ */
