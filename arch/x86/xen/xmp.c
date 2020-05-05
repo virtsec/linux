@@ -179,13 +179,13 @@ uint64_t xmp_auth_val(uint64_t ival, void *ctx)
 
 	altp2m_id = XMP_VIEW_MASK(ival);
 	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
-		return ival;
+		return 0;
 
 	hmac = xmp_siphash(NULL, ctx, altp2m_id);
 	if (hmac != XMP_VAL_HMAC(ival))
 		BUG_ON(true);
 
-	return ival;
+	return 0;
 }
 
 void xmp_context_switch(struct task_struct *task)

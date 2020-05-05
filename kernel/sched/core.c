@@ -2859,7 +2859,7 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	}
 
 #ifdef CONFIG_XMP
-	// xmp_context_switch(next);
+	xmp_context_switch(next);
 #endif
 
 	rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
