@@ -150,7 +150,7 @@ int xmp_release_pages(struct page *page, unsigned int num_pages);
  * xMP primitive A - Memory partitioning through xMP Domains
  */
 
-uint16_t xmp_alloc_pdomain(bool has_key);
+uint16_t xmp_alloc_pdomain(void);
 
 void xmp_free_pdomain(uint16_t altp2m_id);
 

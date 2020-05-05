@@ -115,6 +115,11 @@ static uint16_t xmp_siphash(void *ptr, void *ctx, uint16_t altp2m_id)
 	data = ((uint64_t)ptr ^ (uint64_t)ctx);
 
 	xmp_vmfunc(altp2m_id);
+
+	/*
+	 * This will crash if the altp2m view we just switched to does not
+	 * have a key generated when the domain was allocated.
+	 */
 	hash = siphash(&data, sizeof(data), xmp_key);
 	xmp_vmfunc(view);
 
@@ -125,6 +130,17 @@ void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 {
 	uint64_t hmac, pval;
 
+	/*
+	 * When signing a pointer for either altp2m[0], altpm[1] or for any
+	 * pdomain for which we didn't generate a secret key, we will crash
+	 * because those altp2m views are not intended to be used for this.
+	 *
+	 * The following check handles signing of pointers in the first two
+	 * altp2m views.
+	 *
+	 * If a pointer is to be signed for a different pdomain for which a
+	 * key does not exist, we will crash in xmp_siphash().
+	 */
 	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
 		BUG_ON(true);
 
@@ -148,6 +164,10 @@ void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 	if (pval & (1ULL << 63))
 		pval |= XMP_PAC_MASK;
 
+	/*
+	 * If the HMAC in the pointer does not match the calculated HMAC
+	 * then we deliberately cause a crash.
+	 */
 	hmac = xmp_siphash((void *)pval, ctx, altp2m_id);
 	if (hmac != XMP_PTR_HMAC(ptr))
 		BUG_ON(true);
@@ -317,15 +337,14 @@ int xmp_release_pages(struct page *page, unsigned int num_pages)
 }
 EXPORT_SYMBOL(xmp_release_pages);
 
-static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key, bool has_key)
+static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
 {
 	int ret;
 	xenmem_access_t p_access;
 
 	p_access = XENMEM_access_r;
 
-	if (has_key) {
-		get_random_bytes(key, sizeof(*key));
+	if (altp2m_id == XMP_RESTRICTED_PDOMAIN) {
 
 		/*
 		 * If an altp2m view does not use a secret key, then we mark
@@ -333,7 +352,8 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key, bool h
 		 * trying to sign pointers for this pdomain.
 		 */
 		p_access = XENMEM_access_n;
-	}
+	} else
+		get_random_bytes(key, sizeof(*key));
 
 	/*
 	 * Isolate the page containing the domain-specific key in the given
@@ -351,7 +371,7 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key, bool h
 	return altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
 }
 
-uint16_t xmp_alloc_pdomain(bool has_key)
+uint16_t xmp_alloc_pdomain(void)
 {
 	uint16_t altp2m_id;
 	siphash_key_t *key;
@@ -364,7 +384,7 @@ uint16_t xmp_alloc_pdomain(bool has_key)
 	if (!key)
 		goto xmp_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id, key, has_key))
+	if (xmp_initialize_pdomain(altp2m_id, key))
 		goto xmp_alloc_free_key;
 
 	xmp_pr_info("Created pdomain %u", altp2m_id);
@@ -394,7 +414,7 @@ EXPORT_SYMBOL(xmp_free_pdomain);
  * Initialization
  */
 
-static uint16_t __init xmp_early_alloc_pdomain(bool has_key)
+static uint16_t __init xmp_early_alloc_pdomain(void)
 {
 	uint16_t altp2m_id;
 	siphash_key_t *key;
@@ -407,7 +427,7 @@ static uint16_t __init xmp_early_alloc_pdomain(bool has_key)
 	if (!key)
 		goto xmp_early_alloc_destroy_pdomain;
 
-	if (xmp_initialize_pdomain(altp2m_id, key, has_key))
+	if (xmp_initialize_pdomain(altp2m_id, key))
 		goto xmp_early_alloc_free_key;
 
 	xmp_pr_info("Created early pdomain %u", altp2m_id);
@@ -528,7 +548,7 @@ static int __init xmp_init_pdomains(void)
 	 * acummulated restrictions) view. This is the view the kernel usually
 	 * resides in.
 	 */
-	altp2m_id = xmp_early_alloc_pdomain(false);
+	altp2m_id = xmp_early_alloc_pdomain();
 	if (altp2m_id != XMP_RESTRICTED_PDOMAIN)
 		return -EFAULT;
 
@@ -538,7 +558,7 @@ static int __init xmp_init_pdomains(void)
 	 * Allocate restricted view for page tables (XMP_RESTRICTED_PDOMAIN_PT)
 	 * This view is designed for isolating page tables.
 	 */
-	altp2m_id = xmp_early_alloc_pdomain(true);
+	altp2m_id = xmp_early_alloc_pdomain();
 	if (altp2m_id != XMP_RESTRICTED_PDOMAIN_PT)
 		return -EFAULT;
 #endif
