@@ -320,16 +320,27 @@ EXPORT_SYMBOL(xmp_release_pages);
 static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key, bool has_key)
 {
 	int ret;
+	xenmem_access_t p_access;
 
-	if (has_key)
+	p_access = XENMEM_access_r;
+
+	if (has_key) {
 		get_random_bytes(key, sizeof(*key));
+
+		/*
+		 * If an altp2m view does not use a secret key, then we mark
+		 * the page as non-readable, which will lead to crashes when
+		 * trying to sign pointers for this pdomain.
+		 */
+		p_access = XENMEM_access_n;
+	}
 
 	/*
 	 * Isolate the page containing the domain-specific key in the given
 	 * pdomain. If this is successful, the key can only be read from in
 	 * the view the key was generated for.
 	 */
-	ret = xmp_isolate_addr(altp2m_id, key, 1, XENMEM_access_n, XENMEM_access_r);
+	ret = xmp_isolate_addr(altp2m_id, key, 1, XENMEM_access_n, p_access);
 	if (ret)
 		return -EFAULT;
 
