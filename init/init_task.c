@@ -11,6 +11,10 @@
 #include <linux/mm.h>
 #include <linux/audit.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 #include <asm/pgtable.h>
 #include <linux/uaccess.h>
 
@@ -66,6 +70,9 @@ struct task_struct init_task
 	.policy		= SCHED_NORMAL,
 	.cpus_allowed	= CPU_MASK_ALL,
 	.nr_cpus_allowed= NR_CPUS,
+#ifdef CONFIG_XMP
+	.xmp_kernel_index = XMP_INDEX(XMP_RESTRICTED_PDOMAIN, 0),
+#endif
 	.mm		= NULL,
 	.active_mm	= &init_mm,
 	.restart_block	= {

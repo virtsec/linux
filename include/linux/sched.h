@@ -685,6 +685,10 @@ struct task_struct {
 	struct rb_node			pushable_dl_tasks;
 #endif
 
+#ifdef CONFIG_XMP
+	uint64_t 			xmp_kernel_index;
+#endif
+
 	struct mm_struct		*mm;
 	struct mm_struct		*active_mm;
 
