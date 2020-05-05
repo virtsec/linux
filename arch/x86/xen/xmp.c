@@ -106,6 +106,94 @@ uint8_t xmp_vmfunc(uint16_t pdomain)
 }
 EXPORT_SYMBOL(xmp_vmfunc);
 
+static uint16_t xmp_siphash(void *ptr, void *ctx, uint16_t altp2m_id)
+{
+	uint16_t view;
+	uint64_t hash, data;
+
+	view = XMP_VIEW_MASK(current->xmp_kernel_index);
+	data = ((uint64_t)ptr ^ (uint64_t)ctx);
+
+	xmp_vmfunc(altp2m_id);
+	hash = siphash(&data, sizeof(data), xmp_key);
+	xmp_vmfunc(view);
+
+	return hash & 0x7fff;
+}
+
+void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
+{
+	uint64_t hmac, pval;
+
+	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+		BUG_ON(true);
+
+	hmac  = xmp_siphash(ptr, ctx, altp2m_id);
+	pval  = (uint64_t)ptr & ~XMP_PAC_MASK;
+	pval |= (hmac << 48)  &  XMP_PAC_MASK;
+
+	xmp_pr_info("Pointer %llx signed: %llx", (uint64_t)ptr, pval);
+
+	return (void *)pval;
+}
+
+void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
+{
+	uint64_t hmac, pval;
+
+	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+		return ptr;
+
+	pval = (uint64_t)ptr & ~XMP_PAC_MASK;
+	if (pval & (1ULL << 63))
+		pval |= XMP_PAC_MASK;
+
+	hmac = xmp_siphash((void *)pval, ctx, altp2m_id);
+	if (hmac != XMP_PTR_HMAC(ptr))
+		BUG_ON(true);
+
+	xmp_pr_info("Signed %llx pointer: %llx", (uint64_t)ptr, pval);
+
+	return (void *)pval;
+}
+
+uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id)
+{
+	uint64_t hmac, ival;
+
+	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+		return altp2m_id;
+
+	hmac = xmp_siphash(NULL, ctx, altp2m_id);
+	ival = (hmac << 48) | altp2m_id;
+
+	xmp_pr_info("Generated index %llx", ival);
+
+	return ival;
+}
+
+uint64_t xmp_auth_val(uint64_t ival, void *ctx)
+{
+	uint16_t altp2m_id;
+	uint64_t hmac;
+
+	altp2m_id = XMP_VIEW_MASK(ival);
+	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+		return ival;
+
+	hmac = xmp_siphash(NULL, ctx, altp2m_id);
+	if (hmac != XMP_VAL_HMAC(ival))
+		BUG_ON(true);
+
+	return ival;
+}
+
+void xmp_context_switch(struct task_struct *task)
+{
+	if (xmp_auth_val(task->xmp_kernel_index, task))
+		BUG_ON(true);
+}
+
 static uint16_t xmp_create_pdomain(void)
 {
 	uint16_t altp2m_id = 0;

@@ -49,6 +49,14 @@
 #define XMP_GFP_FVIEW(flags)		(flags) >> __GFP_BITS_SHIFT
 
 /*
+ * xMP PACs
+ */
+
+#define XMP_PAC_MASK			0x7fff000000000000ULL
+#define XMP_VAL_HMAC(val)		((val) & XMP_PAC_MASK) >> 48
+#define XMP_PTR_HMAC(ptr)		XMP_VAL_HMAC((uint64_t)ptr)
+
+/*
  * xMP kernel index
  */
 
@@ -108,6 +116,20 @@ struct xmp_vcpu *xmp_current_vcpu(void);
 struct vea_struct *xmp_current_vea(void);
 
 uint8_t xmp_vmfunc(uint16_t pdomain);
+
+/*
+ * xMP primitive C - Context-bound Pointer Integrity
+ */
+
+void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id);
+
+void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id);
+
+uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id);
+
+uint64_t xmp_auth_val(uint64_t ival, void *ctx);
+
+void xmp_context_switch(struct task_struct *task);
 
 /*
  * xMP primitive B - Isolation of xMP domains
