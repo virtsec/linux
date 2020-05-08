@@ -94,6 +94,11 @@ uint8_t xmp_vmfunc(uint16_t pdomain)
 {
         struct xmp_vcpu *vcpu = xmp_current_vcpu();
 
+	if (!vcpu) {
+		xmp_pr_info("Could not find current vCPU!");
+		return 0;
+	}
+
         /*
          * This branch prediction only misses during the early stage
          * when VMFUNC has not been enabled on the current vCPU.
@@ -148,8 +153,6 @@ void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 	pval  = (uint64_t)ptr & ~XMP_PAC_MASK;
 	pval |= (hmac << 48)  &  XMP_PAC_MASK;
 
-	xmp_pr_info("Pointer %llx signed: %llx", (uint64_t)ptr, pval);
-
 	return (void *)pval;
 }
 
@@ -172,8 +175,6 @@ void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 	if (hmac != XMP_PTR_HMAC(ptr))
 		BUG_ON(true);
 
-	xmp_pr_info("Signed %llx pointer: %llx", (uint64_t)ptr, pval);
-
 	return (void *)pval;
 }
 
@@ -185,9 +186,7 @@ uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id)
 		return altp2m_id;
 
 	hmac = xmp_siphash(NULL, ctx, altp2m_id);
-	ival = (hmac << 48) | altp2m_id;
-
-	xmp_pr_info("Generated index %llx", ival);
+	ival = XMP_INDEX(altp2m_id, hmac);
 
 	return ival;
 }
@@ -206,6 +205,50 @@ uint64_t xmp_auth_val(uint64_t ival, void *ctx)
 		BUG_ON(true);
 
 	return 0;
+}
+
+/*
+ * Protecting and unprotecting
+ */
+
+int xmp_unprotect(uint16_t altp2m_id)
+{
+	uint64_t data, hash;
+
+	if (!xmp_key)
+		return XMP_RESTRICTED_PDOMAIN;
+
+	/*
+	 * To reduce the number of switches, we call vmfunc once to access
+	 * the xmp_key for the specified view and continue execution while
+	 * staying in this view.
+	 *
+	 * This may drastically reduce the numbers of switches in frequent
+	 * locations such as in the #VE handler, when CPUs try to write to
+	 * isolated page table structures.
+	 */
+	xmp_vmfunc(altp2m_id);
+
+	data = (uint64_t)current;
+	hash = siphash(&data, sizeof(data), xmp_key) & 0x7fff;
+
+	current->xmp_kernel_index = XMP_INDEX(altp2m_id, hash);
+
+	return altp2m_id;
+}
+
+int xmp_protect(void)
+{
+	uint16_t altp2m_id = XMP_RESTRICTED_PDOMAIN;
+
+	if (!xmp_key)
+		return altp2m_id;
+
+	xmp_vmfunc(altp2m_id);
+
+	current->xmp_kernel_index = XMP_INDEX(altp2m_id, 0);
+
+	return altp2m_id;
 }
 
 void xmp_context_switch(struct task_struct *task)

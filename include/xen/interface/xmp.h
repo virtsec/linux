@@ -45,7 +45,7 @@
  */
 
 #define XMP_GFP_SHIFT(domain)		(domain) << __GFP_BITS_SHIFT
-#define XMP_GFP_FLAGS(domain, flags)	XMP_GFP_SHIFT(domain) | flags
+#define XMP_GFP_FLAGS(domain, flags)	(XMP_GFP_SHIFT(domain) | (flags))
 #define XMP_GFP_FVIEW(flags)		(flags) >> __GFP_BITS_SHIFT
 
 /*
@@ -129,7 +129,23 @@ uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id);
 
 uint64_t xmp_auth_val(uint64_t ival, void *ctx);
 
+/* Protecting and unprotecting */
+
+int xmp_unprotect(uint16_t altp2m_id);
+
+int xmp_protect(void);
+
 void xmp_context_switch(struct task_struct *task);
+
+static __always_inline void *xmp_va_ptr(void *ptr)
+{
+	uint64_t pval = (uint64_t)ptr & ~XMP_PAC_MASK;
+
+	if (pval & (1ULL << 63))
+		pval |= XMP_PAC_MASK;
+
+	return (void *)pval;
+}
 
 /*
  * xMP primitive B - Isolation of xMP domains
