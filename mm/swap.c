@@ -108,6 +108,11 @@ void __put_page(struct page *page)
 		return;
 	}
 
+#ifdef CONFIG_XMP
+	if (page->flags & (1UL << PG_xmp))
+		xmp_release_pages(page, 1);
+#endif
+
 	if (unlikely(PageCompound(page)))
 		__put_compound_page(page);
 	else
