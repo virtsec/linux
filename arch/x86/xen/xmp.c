@@ -111,6 +111,34 @@ uint8_t xmp_vmfunc(uint16_t pdomain)
 }
 EXPORT_SYMBOL(xmp_vmfunc);
 
+/*
+ * xMP primitive C: Context-bound Pointer Integrity
+ *
+ * The following paragraphs briefly describe the correct usage of the signing
+ * and authenticating functions and their behavior.
+ *
+ * Every pointer to an isolated structure has to be signed. That is, the devs
+ * are responsible for using xmp_sign_ptr() on this particular pointer. We do
+ * pass the altp2m_id as an argument to the function which tells for which id
+ * the pointer is signed for.
+ *
+ * Every usage of the same structure pointer is to be autheticated by calling
+ * xmp_auth_ptr() with the same altp2m_id in which the structure was isolated
+ * in.
+ *
+ * If a pointer is signed by using either ap2m[0] or ap2m[1] the pointers are
+ * returned unmodified as ap2m[0] and ap2m[1] both are not used for isolation
+ * purposes.
+ *
+ * However, if a pointer is authenticated with either one of those altp2m_ids
+ * we will crash, because those views are, as explained, not valid for either
+ * isolation or authentication.
+ *
+ * That means, an attacker trying to modify an index to a unprotected ap2m_id
+ * will ultimately cause a crash, simply because the altp2m_id is invalid for
+ * any protected domain and its isolated objects.
+ */
+
 static uint16_t xmp_siphash(void *ptr, void *ctx, uint16_t altp2m_id)
 {
 	uint16_t view;
@@ -135,19 +163,8 @@ void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 {
 	uint64_t hmac, pval;
 
-	/*
-	 * When signing a pointer for either altp2m[0], altpm[1] or for any
-	 * pdomain for which we didn't generate a secret key, we will crash
-	 * because those altp2m views are not intended to be used for this.
-	 *
-	 * The following check handles signing of pointers in the first two
-	 * altp2m views.
-	 *
-	 * If a pointer is to be signed for a different pdomain for which a
-	 * key does not exist, we will crash in xmp_siphash().
-	 */
 	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
-		BUG_ON(true);
+		return ptr;
 
 	hmac  = xmp_siphash(ptr, ctx, altp2m_id);
 	pval  = (uint64_t)ptr & ~XMP_PAC_MASK;
@@ -161,7 +178,7 @@ void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 	uint64_t hmac, pval;
 
 	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
-		return ptr;
+		BUG_ON(true);
 
 	pval = (uint64_t)ptr & ~XMP_PAC_MASK;
 	if (pval & (1ULL << 63))
@@ -257,6 +274,17 @@ void xmp_context_switch(struct task_struct *task)
 		BUG_ON(true);
 }
 
+/*
+ * xMP primitive A: Memory Partitioning through xMP Domains
+ *
+ * Allocating and freeing domains. All altp2m views have been created during
+ * the initialization phase. We simply look over the bitmap and check, which
+ * domain has not been allocated.
+ *
+ * When freeing a domain we keep the altp2m view active but clear the bit in
+ * the allocation bitmap.
+ */
+
 static uint16_t xmp_create_pdomain(void)
 {
 	uint16_t altp2m_id = 0;
@@ -286,6 +314,12 @@ static int xmp_destroy_pdomain(uint16_t altp2m_id)
 
 	return set;
 }
+
+/*
+ * xMP primitive B: Isolation of xMP Domains
+ *
+ * Core function for isolating page-sized chunks of memory in individual views.
+ */
 
 static int __xmp_isolate_pages(uint16_t altp2m_id, struct page *page,
 	unsigned int num_pages, xenmem_access_t r_access,

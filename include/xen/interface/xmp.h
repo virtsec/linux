@@ -129,6 +129,30 @@ uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id);
 
 uint64_t xmp_auth_val(uint64_t ival, void *ctx);
 
+/*
+ * Use this function when trying to figure out if we have to call any primitive
+ * function. This function works with an index value or with any encoded domain
+ * inside flags, as long as the domain is placed in the LSBs of the argument.
+ */
+
+#ifdef CONFIG_XMP
+
+static __always_inline bool is_isolated_domain(uint64_t ival)
+{
+	uint16_t altp2m_id = XMP_VIEW_MASK(ival);
+
+	return altp2m_id > XMP_RESTRICTED_PDOMAIN && altp2m_id < XMP_MAX_PDOMAINS;
+}
+
+#else
+
+static __always_inline bool is_isolated_domain(uint64_t ival)
+{
+	return false;
+}
+
+#endif
+
 /* Protecting and unprotecting */
 
 int xmp_unprotect(uint16_t altp2m_id);
