@@ -145,6 +145,9 @@ struct kmem_cache *kmem_cache_create_usercopy(const char *name,
 			slab_flags_t flags,
 			unsigned int useroffset, unsigned int usersize,
 			void (*ctor)(void *));
+struct kmem_cache *kmem_cache_create_isolated(const char *name, unsigned int size,
+			unsigned int align, slab_flags_t flags,
+			void (*ctor)(void *), uint16_t altp2m_id);
 void kmem_cache_destroy(struct kmem_cache *);
 int kmem_cache_shrink(struct kmem_cache *);
 
@@ -163,6 +166,11 @@ void memcg_destroy_kmem_caches(struct mem_cgroup *);
 #define KMEM_CACHE(__struct, __flags)					\
 		kmem_cache_create(#__struct, sizeof(struct __struct),	\
 			__alignof__(struct __struct), (__flags), NULL)
+
+#define KMEM_CACHE_ISOLATED(__struct, __flags, __altp2m_id)			\
+		kmem_cache_create_isolated(#__struct, sizeof(struct __struct),	\
+			__alignof__(struct __struct), (__flags), NULL,		\
+			(__altp2m_id))
 
 /*
  * To whitelist a single field for copying to/from usercopy, use this
@@ -354,7 +362,10 @@ static __always_inline unsigned int kmalloc_index(size_t size)
 
 void *__kmalloc(size_t size, gfp_t flags) __assume_kmalloc_alignment __malloc;
 void *kmem_cache_alloc(struct kmem_cache *, gfp_t flags) __assume_slab_alignment __malloc;
+void *kmem_cache_alloc_isolated(struct kmem_cache *s, gfp_t gfpflags,
+	void *ctx) __assume_slab_alignment __malloc;
 void kmem_cache_free(struct kmem_cache *, void *);
+void kmem_cache_free_isolated(struct kmem_cache *, void *, void *);
 
 /*
  * Bulk allocation and freeing operations. These are accelerated in an

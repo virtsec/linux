@@ -36,6 +36,10 @@
 #include <linux/memcontrol.h>
 #include <linux/random.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 #include <trace/events/kmem.h>
 
 #include "internal.h"
@@ -1582,6 +1586,10 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
 		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~(__GFP_RECLAIM|__GFP_NOFAIL);
 
+#ifdef CONFIG_XMP
+	alloc_gfp = XMP_GFP_FLAGS(XMP_VIEW_MASK(s->xmp_cache_index), alloc_gfp);
+#endif
+
 	page = alloc_slab_page(s, alloc_gfp, node, oo);
 	if (unlikely(!page)) {
 		oo = s->min;
@@ -1606,11 +1614,24 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	start = page_address(page);
 
-	if (unlikely(s->flags & SLAB_POISON))
+	if (unlikely(s->flags & SLAB_POISON)) {
+#ifdef CONFIG_XMP
+		if (is_isolated_domain(s->xmp_cache_index))
+			xmp_unprotect(XMP_VIEW_MASK(s->xmp_cache_index));
+#endif
 		memset(start, POISON_INUSE, PAGE_SIZE << order);
+#ifdef CONFIG_XMP
+		if (is_isolated_domain(s->xmp_cache_index))
+			xmp_protect();
+#endif
+	}
 
 	kasan_poison_slab(page);
 
+#ifdef CONFIG_XMP
+	if (is_isolated_domain(s->xmp_cache_index))
+		xmp_unprotect(XMP_VIEW_MASK(s->xmp_cache_index));
+#endif
 	shuffle = shuffle_freelist(s, page);
 
 	if (!shuffle) {
@@ -1624,6 +1645,10 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 		page->freelist = fixup_red_left(s, start);
 	}
 
+#ifdef CONFIG_XMP
+	if (is_isolated_domain(s->xmp_cache_index))
+		xmp_protect();
+#endif
 	page->inuse = page->objects;
 	page->frozen = 1;
 
@@ -2702,8 +2727,17 @@ redo:
 		stat(s, ALLOC_FASTPATH);
 	}
 
-	if (unlikely(gfpflags & __GFP_ZERO) && object)
+	if (unlikely(gfpflags & __GFP_ZERO) && object) {
+#ifdef CONFIG_XMP
+		if (is_isolated_domain(s->xmp_cache_index))
+			xmp_unprotect(XMP_VIEW_MASK(s->xmp_cache_index));
+#endif
 		memset(object, 0, s->object_size);
+#ifdef CONFIG_XMP
+		if (is_isolated_domain(s->xmp_cache_index))
+			xmp_protect();
+#endif
+	}
 
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
 
@@ -2726,6 +2760,20 @@ void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 	return ret;
 }
 EXPORT_SYMBOL(kmem_cache_alloc);
+
+void *kmem_cache_alloc_isolated(struct kmem_cache *s, gfp_t gfpflags,
+	void *ctx)
+{
+	void *object = kmem_cache_alloc(s, gfpflags);
+
+#ifdef CONFIG_XMP
+	if (object && is_isolated_domain(s->xmp_cache_index))
+		object = xmp_sign_ptr(object, ctx, XMP_VIEW_MASK(s->xmp_cache_index));
+#endif
+
+	return object;
+}
+EXPORT_SYMBOL(kmem_cache_alloc_isolated);
 
 #ifdef CONFIG_TRACING
 void *kmem_cache_alloc_trace(struct kmem_cache *s, gfp_t gfpflags, size_t size)
@@ -2972,6 +3020,18 @@ void kmem_cache_free(struct kmem_cache *s, void *x)
 	trace_kmem_cache_free(_RET_IP_, x);
 }
 EXPORT_SYMBOL(kmem_cache_free);
+
+void kmem_cache_free_isolated(struct kmem_cache *s, void *x, void *ctx)
+{
+	void *a = x;
+
+#ifdef CONFIG_XMP
+	a = xmp_auth_ptr(x, ctx, XMP_VIEW_MASK(s->xmp_cache_index));
+#endif
+
+	kmem_cache_free(s, a);
+}
+EXPORT_SYMBOL(kmem_cache_free_isolated);
 
 struct detached_freelist {
 	struct page *page;
