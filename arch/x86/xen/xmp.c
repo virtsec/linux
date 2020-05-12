@@ -163,7 +163,7 @@ void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 {
 	uint64_t hmac, pval;
 
-	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+	if (!is_isolated_domain(altp2m_id))
 		return ptr;
 
 	hmac  = xmp_siphash(ptr, ctx, altp2m_id);
@@ -177,7 +177,7 @@ void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 {
 	uint64_t hmac, pval;
 
-	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+	if (!is_isolated_domain(altp2m_id))
 		BUG_ON(true);
 
 	pval = (uint64_t)ptr & ~XMP_PAC_MASK;
@@ -199,7 +199,7 @@ uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id)
 {
 	uint64_t hmac, ival;
 
-	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+	if (!is_isolated_domain(altp2m_id))
 		return altp2m_id;
 
 	hmac = xmp_siphash(NULL, ctx, altp2m_id);
@@ -214,7 +214,7 @@ uint64_t xmp_auth_val(uint64_t ival, void *ctx)
 	uint64_t hmac;
 
 	altp2m_id = XMP_VIEW_MASK(ival);
-	if (altp2m_id <= XMP_RESTRICTED_PDOMAIN)
+	if (!is_isolated_domain(altp2m_id))
 		return 0;
 
 	hmac = xmp_siphash(NULL, ctx, altp2m_id);
