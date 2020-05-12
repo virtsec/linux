@@ -135,23 +135,12 @@ uint64_t xmp_auth_val(uint64_t ival, void *ctx);
  * inside flags, as long as the domain is placed in the LSBs of the argument.
  */
 
-#ifdef CONFIG_XMP
-
 static __always_inline bool is_isolated_domain(uint64_t ival)
 {
 	uint16_t altp2m_id = XMP_VIEW_MASK(ival);
 
 	return altp2m_id > XMP_RESTRICTED_PDOMAIN && altp2m_id < XMP_MAX_PDOMAINS;
 }
-
-#else
-
-static __always_inline bool is_isolated_domain(uint64_t ival)
-{
-	return false;
-}
-
-#endif
 
 /* Protecting and unprotecting */
 
@@ -197,6 +186,13 @@ void xmp_free_pdomain(uint16_t altp2m_id);
 int __init xmp_init_late(void);
 
 int __init xmp_init(void);
+
+#else /* !CONFIG_XMP */
+
+static __always_inline bool is_isolated_domain(uint64_t ival)
+{
+	return false;
+}
 
 #endif /* CONFIG_XMP */
 
