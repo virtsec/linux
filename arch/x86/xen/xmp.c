@@ -491,14 +491,17 @@ EXPORT_SYMBOL(xmp_free_pdomain);
  * Initialization
  */
 
-static uint16_t __init xmp_early_alloc_pdomain(void)
+static uint16_t __init xmp_early_alloc_pdomain(uint16_t altp2m_id)
 {
-	uint16_t altp2m_id;
 	siphash_key_t *key;
 
-	altp2m_id = xmp_create_pdomain();
-	if (altp2m_id == XMP_MAX_PDOMAINS)
-		return altp2m_id;
+	/*
+	 * Allocate static domains directly without using find_first_zero_bit()
+	 *
+	 * This needs to happen since disabling CONFIG_XMP_PT but enabling e.g.
+	 * CONFIG_XMP_CRED would mess with the altp2m_ids for each view.
+	 */
+	bitmap_set(xmp_pdomain_bitmap, altp2m_id, 1);
 
 	key = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
 	if (!key)
@@ -625,9 +628,7 @@ static int __init xmp_init_pdomains(void)
 	 * acummulated restrictions) view. This is the view the kernel usually
 	 * resides in.
 	 */
-	altp2m_id = xmp_early_alloc_pdomain();
-	if (altp2m_id != XMP_RESTRICTED_PDOMAIN)
-		return -EFAULT;
+	xmp_early_alloc_pdomain(XMP_RESTRICTED_PDOMAIN);
 
 #ifdef CONFIG_XMP_PT
 
@@ -635,9 +636,7 @@ static int __init xmp_init_pdomains(void)
 	 * Allocate restricted view for page tables (XMP_RESTRICTED_PDOMAIN_PT)
 	 * This view is designed for isolating page tables.
 	 */
-	altp2m_id = xmp_early_alloc_pdomain();
-	if (altp2m_id != XMP_RESTRICTED_PDOMAIN_PT)
-		return -EFAULT;
+	xmp_early_alloc_pdomain(XMP_RESTRICTED_PDOMAIN_PT);
 #endif
 
         return 0;
