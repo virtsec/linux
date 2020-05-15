@@ -36,6 +36,10 @@
 #include <linux/hugetlb.h>
 #include <linux/page_idle.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
