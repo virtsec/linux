@@ -22,6 +22,10 @@
 #include <asm/page.h>
 #include <linux/memcontrol.h>
 
+#ifdef CONFIG_XMP
+#include <xen/interface/xmp.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/kmem.h>
 
