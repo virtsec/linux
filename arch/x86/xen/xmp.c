@@ -172,6 +172,7 @@ void *xmp_sign_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 
 	return (void *)pval;
 }
+EXPORT_SYMBOL(xmp_sign_ptr);
 
 void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 {
@@ -194,6 +195,7 @@ void *xmp_auth_ptr(void *ptr, void *ctx, uint16_t altp2m_id)
 
 	return (void *)pval;
 }
+EXPORT_SYMBOL(xmp_auth_ptr);
 
 uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id)
 {
@@ -207,6 +209,7 @@ uint64_t xmp_sign_val(void *ctx, uint16_t altp2m_id)
 
 	return ival;
 }
+EXPORT_SYMBOL(xmp_sign_val);
 
 uint64_t xmp_auth_val(uint64_t ival, void *ctx)
 {
@@ -223,6 +226,7 @@ uint64_t xmp_auth_val(uint64_t ival, void *ctx)
 
 	return 0;
 }
+EXPORT_SYMBOL(xmp_auth_val);
 
 /*
  * Protecting and unprotecting
@@ -253,6 +257,7 @@ int xmp_unprotect(uint16_t altp2m_id)
 
 	return altp2m_id;
 }
+EXPORT_SYMBOL(xmp_unprotect);
 
 int xmp_protect(void)
 {
@@ -267,6 +272,7 @@ int xmp_protect(void)
 
 	return altp2m_id;
 }
+EXPORT_SYMBOL(xmp_protect);
 
 void xmp_context_switch(struct task_struct *task)
 {
