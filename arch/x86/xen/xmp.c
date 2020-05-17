@@ -34,7 +34,7 @@ DEFINE_SPINLOCK(xmp_pdomain_bitmap_lock);
  * make sure the key appears to be at the same address for each domain, we use
  * Xens altp2m_change_gfn hypercall to remap the GFN of the secret key page.
  */
-static siphash_key_t *xmp_key = NULL;
+static siphash_key_t xmp_key __xmpdata = { 0 };
 
 /*
  * xMP vCPU information structure
@@ -153,7 +153,7 @@ static uint16_t xmp_siphash(void *ptr, void *ctx, uint16_t altp2m_id)
 	 * This will crash if the altp2m view we just switched to does not
 	 * have a key generated when the domain was allocated.
 	 */
-	hash = siphash(&data, sizeof(data), xmp_key);
+	hash = siphash(&data, sizeof(data), &xmp_key);
 	xmp_vmfunc(view);
 
 	return hash & 0x7fff;
@@ -236,9 +236,6 @@ int xmp_unprotect(uint16_t altp2m_id)
 {
 	uint64_t data, hash;
 
-	if (!xmp_key)
-		return XMP_RESTRICTED_PDOMAIN;
-
 	/*
 	 * To reduce the number of switches, we call vmfunc once to access
 	 * the xmp_key for the specified view and continue execution while
@@ -251,7 +248,7 @@ int xmp_unprotect(uint16_t altp2m_id)
 	xmp_vmfunc(altp2m_id);
 
 	data = (uint64_t)current;
-	hash = siphash(&data, sizeof(data), xmp_key) & 0x7fff;
+	hash = siphash(&data, sizeof(data), &xmp_key) & 0x7fff;
 
 	current->xmp_kernel_index = XMP_INDEX(altp2m_id, hash);
 
@@ -262,9 +259,6 @@ EXPORT_SYMBOL(xmp_unprotect);
 int xmp_protect(void)
 {
 	uint16_t altp2m_id = XMP_RESTRICTED_PDOMAIN;
-
-	if (!xmp_key)
-		return altp2m_id;
 
 	xmp_vmfunc(altp2m_id);
 
@@ -451,7 +445,7 @@ static int xmp_initialize_pdomain(uint16_t altp2m_id, siphash_key_t *key)
 	 * Remap the GFN of the new key page to the general GFN in which all
 	 * keys are accessible from their own pdomain.
 	 */
-	return altp2m_change_gfn(altp2m_id, virt_to_pfn(xmp_key), virt_to_pfn(key));
+	return altp2m_change_gfn(altp2m_id, virt_to_pfn(&xmp_key), virt_to_pfn(key));
 }
 
 uint16_t xmp_alloc_pdomain(void)
@@ -620,14 +614,6 @@ static int __init xmp_init_pdomains(void)
 
 		xmp_pr_info("Created view %u", altp2m_id);
 	}
-
-	/*
-	 * Alocate a random page which is going to be the base page used for
-	 * the GFN remapping mechanism.
-	 */
-	xmp_key = memblock_virt_alloc_node(PAGE_SIZE, NUMA_NO_NODE);
-	if (!xmp_key)
-		return -EFAULT;
 
 	/*
 	 * Allocate the first xMP protection domain for the restricted (a.k.a.
