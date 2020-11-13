@@ -300,6 +300,12 @@ struct xen_hvm_altp2m_change_gfn {
 typedef struct xen_hvm_altp2m_change_gfn xen_hvm_altp2m_change_gfn_t;
 DEFINE_GUEST_HANDLE(xen_hvm_altp2m_change_gfn_t);
 
+struct xen_hvm_altp2m_set_visibility {
+    uint16_t altp2m_idx;
+    uint8_t visible;
+    uint8_t pad;
+};
+
 struct xen_hvm_altp2m_isolate_pdomain {
     /* view */
     uint16_t view;
@@ -350,8 +356,13 @@ struct xen_hvm_altp2m_op {
 #define HVMOP_altp2m_vcpu_disable_notify  13
 /* Get the active vcpu p2m index */
 #define HVMOP_altp2m_get_p2m_idx          14
-/* Get the active vcpu p2m index */
-#define HVMOP_altp2m_isolate_pdomain      15
+/* Set the "Supress #VE" bit for a range of pages */
+#define HVMOP_altp2m_set_suppress_ve_multi 15
+    /* Set visibility for a given altp2m view */
+#define HVMOP_altp2m_set_visibility       16
+    /* Isolate GFN in disjoint altp2m views */
+#define HVMOP_altp2m_isolate_pdomain      17
+
     domid_t domain;
     uint16_t pad1;
     uint32_t pad2;
@@ -368,6 +379,7 @@ struct xen_hvm_altp2m_op {
         struct xen_hvm_altp2m_suppress_ve          suppress_ve;
         struct xen_hvm_altp2m_vcpu_disable_notify  disable_notify;
         struct xen_hvm_altp2m_get_vcpu_p2m_idx     get_vcpu_p2m_idx;
+	struct xen_hvm_altp2m_set_visibility       set_visibility;
         struct xen_hvm_altp2m_isolate_pdomain      isolate_pdomain;
         uint8_t pad[64];
     } u;
